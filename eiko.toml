@@ -7,7 +7,6 @@ long_description_content_type = "text/markdown"
 author = "kazaamjt"
 author_email = "kazaamjt@gmail.com"
 license = "MIT"
-source_dir = "hyper_v"
-eikobot_requires = ">=0.6.0"
+source_dir = "aws"
+eikobot_requires = ">=0.7.0"
 requires = []
-python_requires = []
