@@ -32,3 +32,8 @@ aws_regions = [
 ]
 
 typedef Region str if self in aws_regions
+
+
+resource IAMRole:
+    name: str
+    permissions: list[str]
