@@ -7,6 +7,3 @@ license = "MIT"
 source_dir = "aws"
 eikobot_version = ">=0.7.2"
 github_name = "eikobot/AWS"
-python_requires = [
-    "boto3",
-]

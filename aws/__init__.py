@@ -2,11 +2,10 @@
 Abstracts the management of AWS resources,
 such IAM credentials, IAM roles, VPCs, VMs and EKS clusters.
 """
-import boto3
-from eikobot.core.helpers import EikoBaseModel
 from eikobot.core.handlers import CRUDHandler, HandlerContext
+from eikobot.core.helpers import EikoBaseModel
 
-IAM_CLIENT = boto3.client("iam")
+from aws import aws_api
 
 
 class IAMRoleModel(EikoBaseModel):
