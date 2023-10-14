@@ -5,6 +5,7 @@ import datetime
 from typing import TYPE_CHECKING
 
 import boto3
+from eikobot.core import logger
 from pydantic import BaseModel
 
 if TYPE_CHECKING:
@@ -97,3 +98,37 @@ def get_key_pairs(region: str) -> dict[str, EC2KeyPair]:
 def delete_key_pair(region: str, key_pair_id: str) -> None:
     client = BotoCache.get_ec2_client(region)
     client.delete_key_pair(KeyPairId=key_pair_id)
+
+
+class EC2Image(BaseModel):
+    """
+    Object representation of an EC2 AMI image
+    """
+
+    image_id: str
+    architecture: str
+    imageType: str
+    platform: str | None
+    state: str
+
+
+def get_ec2_image(region: str, image_id: str) -> EC2Image | None:
+    """
+    Gets all images that are available to the user in the given region.
+    """
+    client = BotoCache.get_ec2_client(region)
+    try:
+        image = client.describe_images(ImageIds=[image_id])["Images"][0]
+        return EC2Image(
+            image_id=image["ImageId"],
+            architecture=image["Architecture"],
+            imageType=image["ImageType"],
+            platform=image.get("Platform"),
+            state=image["State"],
+        )
+    except Exception as e:  # pylint: disable=broad-exception-caught
+        logger.warning(
+            f"AWS: Failed to retrieve image '{image_id}' in region '{region}'. "
+            f"[{e}]"
+        )
+        return None

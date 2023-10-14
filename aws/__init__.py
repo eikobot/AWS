@@ -2,8 +2,10 @@
 Abstracts the management of AWS resources,
 such IAM credentials, IAM roles, VPCs, VMs and EKS clusters.
 """
+from eikobot.core.errors import EikoPluginError
 from eikobot.core.handlers import CRUDHandler, HandlerContext
 from eikobot.core.helpers import EikoBaseModel
+from eikobot.core.plugin import eiko_plugin
 
 from . import api
 
@@ -83,6 +85,16 @@ class EC2KeyPairModel(EikoBaseModel):
         self._regions.append(region)
 
 
+@eiko_plugin()
+def validate_image(region: str, image_id: str) -> None:
+    """
+    Checks if the given image is available.
+    """
+    image = api.get_ec2_image(region, image_id)
+    if image is None:
+        raise EikoPluginError(f"No such image '{image_id}' in region '{region}'.")
+
+
 class EC2InstanceModel(EikoBaseModel):
     """
     Standard representation of an EC2 instance.
@@ -93,6 +105,7 @@ class EC2InstanceModel(EikoBaseModel):
     name: str
     region: str
     key_pair: EC2KeyPairModel
+    image_id: str
 
 
 class EC2InstanceHandler(CRUDHandler):
