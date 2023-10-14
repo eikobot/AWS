@@ -5,5 +5,8 @@ author = "kazaamjt"
 author_email = "kazaamjt@gmail.com"
 license = "MIT"
 source_dir = "aws"
-eikobot_version = ">=0.7.2"
+eikobot_version = ">=0.7.5"
 github_name = "eikobot/AWS"
+python_requires = [
+    "boto3",
+]

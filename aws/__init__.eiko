@@ -31,9 +31,20 @@ aws_regions = [
     "us-west-2",
 ]
 
-typedef Region str if self in aws_regions
+typedef AWSRegion str if self in aws_regions
 
 
 resource IAMRole:
     name: str
     permissions: list[str]
+
+
+resource EC2KeyPair:
+    name: str
+    public_key: str
+
+
+resource EC2Instance:
+    name: str
+    region: AWSRegion
+    key_pair: EC2KeyPair
