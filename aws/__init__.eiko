@@ -48,18 +48,19 @@ resource EC2Instance:
     name: str
     region: AWSRegion
     key_pair: EC2KeyPair
-    image_id: str
+    image_name: str
+    instance_type: str
 
     def __init__(
         self,
         name: str,
         region: AWSRegion,
         key_pair: EC2KeyPair,
-        image_id: str,
+        image_name: str,
+        instance_type: str
     ):
         self.name = name
         self.region = region
         self.key_pair = key_pair
-        self.image_id = image_id
-
-        validate_image(self.region, self.image_id)
+        self.image_name = validate_image(self.region, image_name)
+        self.instance_type = validate_instance_type(self.region, instance_type)

@@ -86,13 +86,29 @@ class EC2KeyPairModel(EikoBaseModel):
 
 
 @eiko_plugin()
-def validate_image(region: str, image_id: str) -> None:
+def validate_image(region: str, image_name: str) -> str:
     """
     Checks if the given image is available.
     """
-    image = api.get_ec2_image(region, image_id)
+    image = api.get_ec2_image(region, image_name)
     if image is None:
-        raise EikoPluginError(f"No such image '{image_id}' in region '{region}'.")
+        raise EikoPluginError(f"No such image '{image_name}' in region '{region}'.")
+
+    return image_name
+
+
+@eiko_plugin()
+def validate_instance_type(region: str, instance_type: str) -> str:
+    """
+    Checks if the given instance type is available.
+    """
+    instance_types = api.get_ec2_instance_types(region)
+    if instance_type not in instance_types:
+        raise EikoPluginError(
+            f"Instance type '{instance_type}' is not available in region '{region}'."
+        )
+
+    return instance_type
 
 
 class EC2InstanceModel(EikoBaseModel):
@@ -105,7 +121,7 @@ class EC2InstanceModel(EikoBaseModel):
     name: str
     region: str
     key_pair: EC2KeyPairModel
-    image_id: str
+    image_name: str
 
 
 class EC2InstanceHandler(CRUDHandler):

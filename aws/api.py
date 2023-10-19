@@ -2,6 +2,7 @@
 Abstracted boto3 functionality to make it easier to use.
 """
 import datetime
+import os
 from typing import TYPE_CHECKING
 
 import boto3
@@ -13,12 +14,17 @@ if TYPE_CHECKING:
     from mypy_boto3_ec2.type_defs import TagTypeDef
 
 
+AWS_ACCESS_KEY = os.environ.get("AWS_ACCESS_KEY")
+AWS_SECRET_ACCESS_KEY = os.environ.get("AWS_SECRET_ACCESS_KEY")
+
+
 class BotoCache:
     """
     Allows for easy creation and automatic caching of Boto resources.
     """
 
     _ec2_clients: dict[str, "EC2Client"] = {}
+    ec2_instance_types: dict[str, list[str]] = {}
 
     @classmethod
     def get_ec2_client(cls, region: str) -> "EC2Client":
@@ -27,7 +33,19 @@ class BotoCache:
         """
         client = cls._ec2_clients.get(region)
         if client is None:
-            client = boto3.client("ec2", region_name=region)
+            if AWS_ACCESS_KEY is not None:
+                if AWS_SECRET_ACCESS_KEY is None:
+                    raise ValueError(
+                        "If 'AWS_ACCESS_KEY' is set, 'AWS_SECRET_ACCESS_KEY' also needs to be set."
+                    )
+                client = boto3.client(
+                    "ec2",
+                    region_name=region,
+                    aws_access_key_id=AWS_ACCESS_KEY,
+                    aws_secret_access_key=AWS_SECRET_ACCESS_KEY,
+                )
+            else:
+                client = boto3.client("ec2", region_name=region)
             cls._ec2_clients[region] = client
 
         return client
@@ -112,13 +130,20 @@ class EC2Image(BaseModel):
     state: str
 
 
-def get_ec2_image(region: str, image_id: str) -> EC2Image | None:
+def get_ec2_image(region: str, image_name: str) -> EC2Image | None:
     """
     Gets all images that are available to the user in the given region.
     """
     client = BotoCache.get_ec2_client(region)
     try:
-        image = client.describe_images(ImageIds=[image_id])["Images"][0]
+        image = client.describe_images(
+            Filters=[
+                {
+                    "Name": "name",
+                    "Values": [image_name],
+                }
+            ]
+        )["Images"][0]
         return EC2Image(
             image_id=image["ImageId"],
             architecture=image["Architecture"],
@@ -128,7 +153,28 @@ def get_ec2_image(region: str, image_id: str) -> EC2Image | None:
         )
     except Exception as e:  # pylint: disable=broad-exception-caught
         logger.warning(
-            f"AWS: Failed to retrieve image '{image_id}' in region '{region}'. "
+            f"AWS: Failed to retrieve image '{image_name}' in region '{region}'. "
             f"[{e}]"
         )
         return None
+
+
+def get_ec2_instance_types(region: str) -> list[str]:
+    """
+    Lists all available instance type
+    """
+    prev = BotoCache.ec2_instance_types.get(region)
+    if prev is not None:
+        return prev
+
+    client = BotoCache.get_ec2_client(region)
+    instance_types: list[str] = []
+    response = client.describe_instance_types()
+    while "NextToken" in response:
+        for instance_type in response["InstanceTypes"]:
+            instance_types.append(instance_type["InstanceType"])
+
+        response = client.describe_instance_types(NextToken=response["NextToken"])
+
+    BotoCache.ec2_instance_types[region] = instance_types
+    return instance_types
