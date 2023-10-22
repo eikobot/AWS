@@ -1,3 +1,5 @@
+import std
+
 aws_regions = [
     "af-south-1",
     "ap-east-1",
@@ -44,6 +46,7 @@ resource EC2KeyPair:
     public_key: str
 
 
+@index(["region", "name"])
 resource EC2Instance:
     name: str
     region: AWSRegion

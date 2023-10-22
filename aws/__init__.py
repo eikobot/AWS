@@ -2,7 +2,7 @@
 Abstracts the management of AWS resources,
 such IAM credentials, IAM roles, VPCs, VMs and EKS clusters.
 """
-from eikobot.core.errors import EikoPluginError
+from eikobot.core.errors import EikoPluginError, EikoDeployError
 from eikobot.core.handlers import CRUDHandler, HandlerContext
 from eikobot.core.helpers import EikoBaseModel
 from eikobot.core.plugin import eiko_plugin
@@ -122,6 +122,7 @@ class EC2InstanceModel(EikoBaseModel):
     region: str
     key_pair: EC2KeyPairModel
     image_name: str
+    instance_type: str
 
 
 class EC2InstanceHandler(CRUDHandler):
@@ -132,5 +133,25 @@ class EC2InstanceHandler(CRUDHandler):
     __eiko_resource__ = "EC2Instance"
 
     async def create(self, ctx: HandlerContext[EC2InstanceModel]) -> None:
+        image = api.get_ec2_image(ctx.resource.region, ctx.resource.image_name)
+        if image is None:
+            raise EikoDeployError(
+                f"Couldn't find image '{ctx.resource.image_name}' in region '{ctx.resource.region}'."
+            )
+        await api.create_ec2_instance(
+            ctx.resource.name,
+            ctx.resource.region,
+            ctx.resource.key_pair.name,
+            image.image_id,
+            ctx.resource.instance_type,
+            ctx.task_id,
+            ctx,
+        )
+
+    async def read(self, ctx: HandlerContext[EC2InstanceModel]) -> None:
         ctx.resource.key_pair.enforce(ctx.resource.region, ctx)
+        instance_id = api.get_instance_id(ctx.resource.region, ctx.task_id)
+        if instance_id is None:
+            return
+
         ctx.deployed = True
