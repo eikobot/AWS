@@ -46,6 +46,7 @@ resource EC2KeyPair:
     public_key: str
 
 
+# This is the actual VM
 @index(["region", "name"])
 resource EC2Instance:
     name: str
@@ -54,16 +55,50 @@ resource EC2Instance:
     image_name: str
     instance_type: str
 
+    promise public_ip: std.IPv4Address
+    _test_ssh: bool
+
     def __init__(
         self,
         name: str,
         region: AWSRegion,
         key_pair: EC2KeyPair,
         image_name: str,
-        instance_type: str
+        instance_type: str,
+        _test_ssh: bool = False,
     ):
         self.name = name
         self.region = region
         self.key_pair = key_pair
         self.image_name = validate_image(self.region, image_name)
         self.instance_type = validate_instance_type(self.region, instance_type)
+        self._test_ssh = _test_ssh
+
+
+@index(["_instance.region", "_instance.name"])
+resource EC2InstanceHost:
+    _instance: EC2Instance
+    host: std.Host
+
+    def __init__(
+        self,
+        name: str,
+        region: AWSRegion,
+        key_pair: EC2KeyPair,
+        image_name: str,
+        instance_type: str,
+        username: str = "",
+    ):
+        self._instance = EC2Instance(
+            name,
+            region,
+            key_pair,
+            image_name,
+            instance_type,
+            _test_ssh=True,
+        )
+
+        self.host = std.Host(
+            self._instance.public_ip,
+            username = get_default_username(image_name, name, username),
+        )

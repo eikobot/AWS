@@ -2,9 +2,13 @@
 Abstracts the management of AWS resources,
 such IAM credentials, IAM roles, VPCs, VMs and EKS clusters.
 """
-from eikobot.core.errors import EikoPluginError, EikoDeployError
-from eikobot.core.handlers import CRUDHandler, HandlerContext
+import asyncio
+
+import asyncssh
+from eikobot.core.errors import EikoDeployError, EikoPluginError
+from eikobot.core.handlers import CRUDHandler, Handler, HandlerContext
 from eikobot.core.helpers import EikoBaseModel
+from eikobot.core.lib.std import HostModel
 from eikobot.core.plugin import eiko_plugin
 
 from . import api
@@ -111,6 +115,31 @@ def validate_instance_type(region: str, instance_type: str) -> str:
     return instance_type
 
 
+@eiko_plugin()
+def get_default_username(
+    image_name: str, instance_name: str, username: str = ""
+) -> str:
+    """
+    Checks if the given image is available.
+    """
+    if username != "":
+        return username
+
+    if "amazon" in image_name:
+        return "ec2-user"
+
+    if "debian" in image_name:
+        return "admin"
+
+    if "ubuntu" in image_name:
+        return "ubuntu"
+
+    raise EikoPluginError(
+        f"No default username available for image '{image_name}'. "
+        f"Please add a username to the EC2Instance '{instance_name}'."
+    )
+
+
 class EC2InstanceModel(EikoBaseModel):
     """
     Standard representation of an EC2 instance.
@@ -123,6 +152,7 @@ class EC2InstanceModel(EikoBaseModel):
     key_pair: EC2KeyPairModel
     image_name: str
     instance_type: str
+    _test_ssh: bool = False
 
 
 class EC2InstanceHandler(CRUDHandler):
@@ -138,15 +168,20 @@ class EC2InstanceHandler(CRUDHandler):
             raise EikoDeployError(
                 f"Couldn't find image '{ctx.resource.image_name}' in region '{ctx.resource.region}'."
             )
-        await api.create_ec2_instance(
+        instance_id = api.create_ec2_instance(
             ctx.resource.name,
             ctx.resource.region,
             ctx.resource.key_pair.name,
             image.image_id,
             ctx.resource.instance_type,
             ctx.task_id,
-            ctx,
         )
+        await api.wait_for_instance(ctx.resource.region, instance_id, ctx)
+
+        instance = api.get_ec2_instance(ctx.resource.region, instance_id)
+        ctx.promises["public_ip"].set(instance.public_ip_address, ctx)
+
+        ctx.deployed = True
 
     async def read(self, ctx: HandlerContext[EC2InstanceModel]) -> None:
         ctx.resource.key_pair.enforce(ctx.resource.region, ctx)
@@ -154,4 +189,43 @@ class EC2InstanceHandler(CRUDHandler):
         if instance_id is None:
             return
 
+        instance = api.get_ec2_instance(ctx.resource.region, instance_id)
+        ctx.promises["public_ip"].set(instance.public_ip_address, ctx)
+        await self._wait_for_ssh(instance.public_ip_address, ctx)
+
         ctx.deployed = True
+
+    async def _wait_for_ssh(
+        self, host: str, ctx: HandlerContext[EC2InstanceModel]
+    ) -> None:
+        if ctx.resource._test_ssh:  # pylint: disable=protected-access
+            for i in range(6):
+                ctx.debug("Waiting for EC2 instance to come online.")
+                if await self._ready_to_connect(host):
+                    break
+                if i == 6:
+                    raise EikoDeployError("Failed to ssh to host.")
+
+    async def _ready_to_connect(self, host: str) -> bool:
+        try:
+            async with asyncssh.connect(host) as connection:
+                await connection.run("echo eikobot", timeout=10)
+        except asyncssh.HostKeyNotVerifiable:
+            return True
+        except asyncssh.TimeoutError:
+            return False
+        except asyncssh.PermissionDenied:
+            return True
+
+        return False
+
+
+class EC2InstanceHostModel(EikoBaseModel):
+    """
+    Standard representation of an EC2 instance.
+    """
+
+    __eiko_resource__ = "EC2InstanceHost"
+
+    _instance: EC2InstanceModel
+    host: HostModel

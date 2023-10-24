@@ -16,6 +16,7 @@ from pydantic import BaseModel
 
 if TYPE_CHECKING:
     from mypy_boto3_ec2 import EC2Client, EC2ServiceResource
+    from mypy_boto3_ec2.service_resource import Instance, SecurityGroup
     from mypy_boto3_ec2.type_defs import TagTypeDef
 
 
@@ -261,22 +262,26 @@ def get_instance_id(region: str, task_id: str) -> str | None:
 
     raise ValueError(
         "Somehow multiple machines were given the same Eikobot id. "
-        "This is an issue Eikobot doesn't know how to resolve."
+        "Unable to resolve."
     )
 
 
-async def create_ec2_instance(
+def get_ec2_instance(region: str, instance_id: str) -> "Instance":
+    ec2 = AWSCache.get_ec2_resource(region)
+    return ec2.Instance(instance_id)
+
+
+def create_ec2_instance(
     name: str,
     region: str,
     key_pair: str,
     image_id: str,
     instance_type: str,
     task_id: str,
-    ctx: HandlerContext,
     tags: dict[str, str] | None = None,
-) -> None:
+) -> str:
     """
-    Creates a running instance on EC2 and then blocks until it is running.
+    Creates a running instance on EC2.
     """
     logger.debug(f"[AWS] Creating instance '{name}', with EikobotID '{task_id}'.")
     _tags: list["TagTypeDef"] = []
@@ -288,7 +293,7 @@ async def create_ec2_instance(
             _tags.append({"Key": key, "Value": value})
 
     client = AWSCache.get_ec2_client(region)
-    instance_id = client.run_instances(
+    return client.run_instances(
         ImageId=image_id,
         MinCount=1,
         MaxCount=1,
@@ -301,30 +306,28 @@ async def create_ec2_instance(
             }
         ],
     )["Instances"][0]["InstanceId"]
-    await _wait_for_instance(region, instance_id, ctx)
 
 
-async def _wait_for_instance(
-    region: str, instance_id: str, ctx: HandlerContext
-) -> None:
-    resource = AWSCache.get_ec2_resource(region)
+async def wait_for_instance(region: str, instance_id: str, ctx: HandlerContext) -> None:
+    """
+    asynchronously blocks until the EC2 machine is in a running state.
+    """
+    ec2 = AWSCache.get_ec2_resource(region)
     while True:
-        instance = list(resource.instances.filter(InstanceIds=[instance_id]))[0]
+        instance = list(ec2.instances.filter(InstanceIds=[instance_id]))[0]
         if instance.state["Name"] == "running":
             break
         ctx.debug("Waiting for EC2 instance to come online.")
         await asyncio.sleep(10)
 
-    # client = AWSCache.get_ec2_client(region)
 
-    # while True:
-    #     instance_status = client.describe_instance_status(InstanceIds=[instance_id])[
-    #         "InstanceStatuses"
-    #     ][0]
-    #     if (
-    #         instance_status["InstanceState"]["Name"] == "Running"
-    #         and instance_status["InstanceStatus"]["Status"] == "ok"
-    #     ):
-    #         break
-    #     ctx.debug("Waiting for EC2 instance to come online.")
-    #     await asyncio.sleep(10)
+def create_security_group(
+    region: str, name: str, description: str, vpc_id: str
+) -> "SecurityGroup":
+    """
+    Creates a security group for a given VPC.
+    """
+    ec2 = AWSCache.get_ec2_resource(region)
+    return ec2.create_security_group(
+        GroupName=name, Description=description, VpcId=vpc_id
+    )
